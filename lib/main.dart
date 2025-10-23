@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'api_service.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -59,11 +60,32 @@ class _BeritaPageState extends State<BeritaPage> {
   late Future<List<dynamic>> futureBerita;
   String _searchQuery = '';
   int _selectedIndex = 0;
+  final ScrollController _scrollController = ScrollController();
+  bool _showScrollToTop = false;
 
   @override
   void initState() {
     super.initState();
     futureBerita = apiService.fetchNews();
+    _scrollController.addListener(_scrollListener);
+  }
+
+  void _scrollListener() {
+    setState(() {
+      _showScrollToTop = _scrollController.offset > 300;
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refreshBerita() async {
+    setState(() {
+      futureBerita = apiService.fetchNews(query: _searchQuery);
+    });
   }
 
   void _onSearch(String query) {
@@ -77,6 +99,14 @@ class _BeritaPageState extends State<BeritaPage> {
     setState(() {
       _selectedIndex = index;
     });
+  }
+
+  void _scrollToTop() {
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeInOut,
+    );
   }
 
   @override
@@ -125,95 +155,108 @@ class _BeritaPageState extends State<BeritaPage> {
       ),
 
       // ===== BODY =====
-      body: FutureBuilder<List<dynamic>>(
-        future: futureBerita,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          } else if (snapshot.hasError) {
-            return Center(child: Text('Terjadi kesalahan: ${snapshot.error}'));
-          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(child: Text('Tidak ada berita ditemukan.'));
-          } else {
-            final beritaList = snapshot.data!;
-            return ListView.builder(
-              itemCount: beritaList.length,
-              itemBuilder: (context, index) {
-                final berita = beritaList[index];
-                return InkWell(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      PageRouteBuilder(
-                        transitionDuration: const Duration(milliseconds: 400),
-                        pageBuilder: (_, __, ___) =>
-                            DetailPage(berita: berita),
-                        transitionsBuilder: (_, animation, __, child) {
-                          return FadeTransition(
-                            opacity: animation,
-                            child: child,
-                          );
-                        },
+      body: RefreshIndicator(
+        onRefresh: _refreshBerita,
+        child: FutureBuilder<List<dynamic>>(
+          future: futureBerita,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            } else if (snapshot.hasError) {
+              return Center(child: Text('Terjadi kesalahan: ${snapshot.error}'));
+            } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
+              return const Center(child: Text('Tidak ada berita ditemukan.'));
+            } else {
+              final beritaList = snapshot.data!;
+              return ListView.builder(
+                controller: _scrollController,
+                itemCount: beritaList.length,
+                itemBuilder: (context, index) {
+                  final berita = beritaList[index];
+                  return InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        PageRouteBuilder(
+                          transitionDuration: const Duration(milliseconds: 400),
+                          pageBuilder: (_, __, ___) =>
+                              DetailPage(berita: berita),
+                          transitionsBuilder: (_, animation, __, child) {
+                            return FadeTransition(
+                              opacity: animation,
+                              child: child,
+                            );
+                          },
+                        ),
+                      );
+                    },
+                    child: Card(
+                      margin:
+                          const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      elevation: 3,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                    );
-                  },
-                  child: Card(
-                    margin:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    elevation: 3,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (berita['urlToImage'] != null)
-                          ClipRRect(
-                            borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(12)),
-                            child: Image.network(
-                              berita['urlToImage'],
-                              width: double.infinity,
-                              height: 180,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  const Icon(Icons.broken_image, size: 100),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (berita['urlToImage'] != null)
+                            ClipRRect(
+                              borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(12)),
+                              child: Image.network(
+                                berita['urlToImage'],
+                                width: double.infinity,
+                                height: 180,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    const Icon(Icons.broken_image, size: 100),
+                              ),
+                            ),
+                          Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  berita['title'] ?? 'Tanpa Judul',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  berita['description'] ?? '',
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: Colors.grey[700],
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                berita['title'] ?? 'Tanpa Judul',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                berita['description'] ?? '',
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: Colors.grey[700],
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              },
-            );
-          }
-        },
+                  );
+                },
+              );
+            }
+          },
+        ),
       ),
+
+      // ===== Tombol Kembali ke Atas =====
+      floatingActionButton: _showScrollToTop
+          ? FloatingActionButton(
+              onPressed: _scrollToTop,
+              backgroundColor: Colors.indigo,
+              child: const Icon(Icons.arrow_upward, color: Colors.white),
+            )
+          : null,
 
       // ===== BOTTOM NAV BAR =====
       bottomNavigationBar: BottomNavigationBar(

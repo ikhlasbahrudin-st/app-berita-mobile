@@ -1,6 +1,7 @@
 # berita_app
+# TUGAS4
+Tugas PRAKTIKUM Mobile- "aplikasi berita menggunakan API"
 
-A new Flutter project.
 
 ## Getting Started
 
